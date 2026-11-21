@@ -1,0 +1,7 @@
+.git
+.idea
+venv
+**/target
+ui/node_modules
+ui/dist
+tools/docker/local
