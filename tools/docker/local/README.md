@@ -41,7 +41,7 @@ are records in a database: every operation succeeds without touching real
 infrastructure. It is the same setup the project CI uses for its smoke tests.
 
 | Works | Does not work |
-|---|---|
+| --- | --- |
 | UI and API, all orchestration logic | Real VMs (nothing actually boots) |
 | Creating instances, networks, volumes, snapshots | VM console |
 | System VMs and virtual routers (simulated) | Real template downloads |
@@ -92,10 +92,10 @@ datacenter (runs once) ──> management:8096 + mysql  deploys the simulated zo
 ```
 
 | Service | Role | Image |
-|---|---|---|
+| --- | --- | --- |
 | `nginx` | TLS termination and reverse proxy; the only published ports | `nginx:alpine` |
-| `ui` | The Vue UI, built for production and served as static files | built from `Dockerfile`, target `ui` |
-| `management` | Management server with the simulator, run with `mvn jetty:run` | built from `Dockerfile`, target `management` |
+| `ui` | The Vue UI, built for production and served as static files | built from `Dockerfile.ui` |
+| `management` | Management server with the simulator, run with `mvn jetty:run` | built from `Dockerfile` |
 | `mysql` | Database (`cloud`, `cloud_usage`, `simulator`) | `mysql:8.4` |
 | `db-init` | Creates the schemas, then exits | same image as `management` |
 | `datacenter` | Deploys the zone with Marvin, then exits | same image as `management` |
@@ -107,21 +107,24 @@ Start order is enforced with `depends_on`: `mysql` healthy → `db-init` finishe
 
 ### Images
 
-`Dockerfile` has two independent targets and uses the repository root as build
-context.
+Each image has its own Dockerfile and build context.
 
-- **`management`** installs JDK 17, Maven and Python on Ubuntu 24.04, copies the
-  source tree and runs `mvn -Pdeveloper -Dsimulator -DskipTests clean install`.
+- **`management`** (`Dockerfile`, context: repository root) installs JDK 17,
+  Maven and Python on Ubuntu 24.04, copies the source tree and runs `mvn -Pdeveloper -Dsimulator -DskipTests clean install`.
   Before building, it rewrites the database host from `localhost` to `mysql` in
   the image's copy of `build/replace.properties` (read by the management server)
   and generates `utils/conf/db.properties.override` (read by `deploydb`). Your
-  working tree is not modified. Marvin is installed from the build output.
-- **`ui`** runs `npm run build` on Node 24 and copies `ui/dist` into an
-  `nginx:alpine` image.
+  working tree is not modified. Marvin is installed from the build output. The
+  Maven repository is kept in a BuildKit cache mount, so a rebuild recompiles
+  everything but does not download the dependencies again.
+- **`ui`** (`Dockerfile.ui`, context: `ui/`) runs `npm run build` on Node 24
+  and copies `dist` into an `nginx:alpine` image. The npm and webpack caches
+  are kept in BuildKit cache mounts between builds.
 
-`Dockerfile.dockerignore` keeps `.git`, `target` directories, `node_modules` and
-this directory out of the build context, so editing the files here does not
-trigger a Maven rebuild.
+`Dockerfile.dockerignore` keeps `.git`, `target` directories, this directory and
+everything under `ui/` except `index.html` (the only UI file the Maven build
+reads) out of the `management` build context. Editing the UI or the files here
+therefore does not trigger a Maven rebuild.
 
 ### Database
 
@@ -151,7 +154,7 @@ domain are the certificate and `/etc/hosts`. To change the domain, run
 ### Networks and ports
 
 | Network | Subnet | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `cloudstack-public` | 192.168.242.0/24 | Published ports and outbound access |
 | `cloudstack-internal` | 192.168.243.0/24 | Container-to-container only, no route out |
 
@@ -193,9 +196,9 @@ docker compose -f tools/docker/local/docker-compose.yml down -v
 The source is copied into the images, not mounted.
 
 | You changed | What is rebuilt |
-|---|---|
-| Java, Maven or anything outside `ui/` | The whole Maven build |
-| Only files under `ui/` | The `ui` image (a few minutes); also the Maven build, since `ui/` is part of its context |
+| --- | --- |
+| Java, Maven or anything outside `ui/` | The `management` image (the whole Maven build) |
+| Only files under `ui/` | The `ui` image (a few minutes) |
 | Files in `tools/docker/local/` | Nothing; restart the affected service |
 
 To rebuild a single image, name it:
@@ -221,7 +224,7 @@ cookies, on the following calls.
 ## Troubleshooting
 
 | Symptom | Cause and fix |
-|---|---|
+| --- | --- |
 | `nginx` fails with "address already in use" | Something else is listening on 80 or 443. Stop it and run `up -d` again |
 | `nginx` exits right after starting | `certs/tls.crt` or `certs/tls.key` is missing. Run `generate-certs.sh` |
 | Browser warns about the certificate | The mkcert CA is not trusted by that browser. Run `mkcert -install` and restart the browser |
@@ -232,10 +235,12 @@ cookies, on the following calls.
 ## Files
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `docker-compose.yml` | Service, volume and network definitions |
-| `Dockerfile` | `management` and `ui` images |
-| `Dockerfile.dockerignore` | Build context exclusions for that Dockerfile |
+| `Dockerfile` | `management` image |
+| `Dockerfile.dockerignore` | Build context exclusions for the `management` image |
+| `Dockerfile.ui` | `ui` image |
+| `Dockerfile.ui.dockerignore` | Build context exclusions for the `ui` image |
 | `db-init.sh` | Creates the schemas on first run |
 | `deploy-datacenter.sh` | Deploys the simulated zone on first run |
 | `generate-certs.sh` | Generates the mkcert certificate (runs on the host) |
