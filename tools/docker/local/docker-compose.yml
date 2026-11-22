@@ -72,9 +72,8 @@ services:
 
   ui:
     build:
-      context: ../../..
-      dockerfile: tools/docker/local/Dockerfile
-      target: ui
+      context: ../../../ui
+      dockerfile: ../tools/docker/local/Dockerfile.ui
     image: cloudstack-ui
     container_name: cloudstack-ui
     restart: unless-stopped
@@ -120,7 +119,6 @@ services:
     build:
       context: ../../..
       dockerfile: tools/docker/local/Dockerfile
-      target: management
     image: cloudstack-management
     container_name: cloudstack-management
     restart: unless-stopped
